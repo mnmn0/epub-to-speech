@@ -1,0 +1,13 @@
+version: '3'
+
+services:
+  app:
+    build: ./
+    ports:
+      - 8000:8000
+  voicevox:
+    image: voicevox/voicevox_engine:cpu-ubuntu20.04-latest
+    #gpu
+    #image: voicevox/voicevox_engine:nvidia-ubuntu20.04-latest
+    ports:
+      - 50021:50021
