@@ -8,6 +8,9 @@ import pandas as pd
 import time
 import re
 from bs4 import BeautifulSoup
+import wave
+import numpy as np
+import glob
 
 def synthesis(text, filename, speaker=1, max_retry=20):
     # Internal Server Error(500)が出ることがあるのでリトライする
@@ -39,6 +42,25 @@ def synthesis(text, filename, speaker=1, max_retry=20):
     else:
         raise ConnectionError("リトライ回数が上限に到達しました。 synthesis : ", filename, "/", text[:30], r,text)
 
+def combine(filename, dir):
+    audios = []
+    for f in sorted(glob.glob(f"{dir}/audio_*.wav")):
+        with wave.open(f, "rb") as fp:
+            buf = fp.readframes(-1) # 全フレーム読み込み
+            assert fp.getsampwidth() == 2 # と仮定（np.int16でキャスト）
+            audios.append(np.frombuffer(buf, np.int16))
+            params = fp.getparams()
+    audio_data = np.concatenate(audios)
+    # 正規化（ピーク時基準）
+    scaling_factors = [np.iinfo(np.int16).max/(np.max(audio_data)+1e-8),
+                       np.iinfo(np.int16).min/(np.min(audio_data)+1e-8)]
+    # s>0:位相が反転しないようにする。ここをmaxにするとプチッというノイズが入るので注意
+    scaling_factors = min([s for s in scaling_factors if s > 0]) 
+    audio_data = (audio_data * scaling_factors).astype(np.int16)
+    with wave.Wave_write(f"{filename}.wav") as fp:
+        fp.setparams(params)
+        fp.writeframes(audio_data.tobytes())
+
 book = epub.read_epub('./oreilly-978-4-8144-0002-7e.epub')
 
 title = book.get_metadata('DC', 'title')
@@ -59,11 +81,10 @@ for item in items:
         text_array = "".join(line for line in lines if line).split('。')
         path = "./book/" + item.get_name() + ".txt" # ファイル名
         print(text_array)
-
+        os.makedirs(item.get_name())
         for i, t in enumerate(text_array):
             print(t)
-            synthesis(t, f"audio_{i}.wav")
-            if i == 6:
-                break
+            synthesis(t, f"{item.get_name()}/audio_{i}.wav")
+        combine(item.get_name(), item.get_name())
         # with open(path, mode='w') as f:
         #      f.write("\n".join(line for line in text_array if line))
